@@ -1,4 +1,3 @@
-require("./jszip.js")
 const app = require("./app.js")
 
 const { program } = require('commander');
@@ -27,15 +26,13 @@ const fs = require("fs");
 //  await new Response(stream.Readable.toWeb(fs.createReadStream(path))).blob();
 
 async function run() { // Must function wrap so we can use async at toplevel
-  const bufferPromise = fs.promises.readFile(input);
-
   let fallback = (msg) => { console.log(msg); };
   let doneFailure = (e) => { console.log("Error!", e, e.stack); };
   let doneSuccess = (msg) => { console.log("Success. Here is a message from Darius that may not apply to you:\n", msg)};
-  app.parseZip([bufferPromise], {
+  app.parseZip([input], {
     callback:{fallback, doneFailure, doneSuccess},
     baseUrl:options.baseUrl || '',
-    directoriesDisabled:options.disableDirectories;
-    saveAs:(blob, filename) => blob.arrayBuffer().then(arrayBuffer=>fs.writeFileSync(output, Buffer.from(arrayBuffer)))});
+    directoriesDisabled:options.disableDirectories
+  });
 }
 run();

@@ -1,6 +1,9 @@
-const webEnvironment =typeof document !== "undefined"
+const webEnvironment = typeof document !== "undefined"
 let directoriesDisabled = webEnvironment && document.getElementById('disable-directories').checked;
 console.log('loaded...');
+
+const assert = require('node:assert').strict;
+assert(!webEnvironment, "Browser support currently believed to be broken.") // Remove if you're gonna restore web support I guess
 
 let baseUrlOverride = null
 
@@ -342,10 +345,11 @@ function parseZip(files, {callback:{fallback, starting, filtering, makingThreads
   (starting || fallback)("Starting...");
   const dateBefore = new Date();
   function handleFile(f) {
-    if (typeof JSZip == "undefined")
-      JSZip = require("jszip");
-    JSZip.loadAsync(f)
-      .then(zip => {
+    const AdmZip = require("adm-zip");
+
+    const zip = new AdmZip(f);
+
+    try {
         const dateAfter = new Date();
         zip.file('data/manifest.js').async("string").then(function(content) {
           if (typeof window == "undefined")
@@ -456,7 +460,7 @@ function parseZip(files, {callback:{fallback, starting, filtering, makingThreads
             });
           });
         });
-      }).catch(error => {
+      } catch(error) {
         (doneFailure || fallback)(`Error! ${error.toString()}`);
         if (error.toString().includes('TypeError')) {
           (doneFailure || fallback)(`I am guessing that your zip file is missing some files. It is also possible that you unzipped and re-zipped your file and the data is in an extra subdirectory. Check out the "Known problems" section above. You'll need the "data" directory to be in the zip root, not living under some other directory.`);
@@ -464,13 +468,14 @@ function parseZip(files, {callback:{fallback, starting, filtering, makingThreads
         if (error.toString().includes('Corrupted')) {
           (doneFailure || fallback)(`I am guessing that your archive is too big! If it's more than 2GB you're likely to see this error. If you look above at the "Known problems" section, you'll see a potential solution. Sorry it is a bit of a pain in the ass.`);
         }
-      });
+      }
   }
   for (const file of files) {
     handleFile(file);
   }
 }
 
+// Note: No longer used
 function parseZipHtml() {
   $output = document.getElementById('output');
   let fallback = (msg) => {

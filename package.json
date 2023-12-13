@@ -3,7 +3,6 @@
   "description": "Make your own simple, public, searchable Twitter archive",
   "version": "1.0.0",
   "scripts": {
-    "dist": "copyfiles app.js FileSaver.min.js FileSaver.min.js.map htaccess.txt index.html jszip.js LICENSE.md dist",
     "exec": "node exec.js"
   },
   "repository": {
@@ -13,15 +12,11 @@
   "keywords": [],
   "author": "Darius Kazemi",
   "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/monatheoctocat/my_package/issues"
-  },
   "homepage": "https://tinysubversions.com/twitter-archive/make-your-own/",
   "devDependencies": {
-    "commander": "^11.0.0",
-    "copyfiles": "^2.4.1"
   },
   "dependencies": {
-    "jszip": "^3.10.1"
+    "adm-zip": "^0.5.10",
+    "commander": "^11.0.0"
   }
 }

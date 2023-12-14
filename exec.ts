@@ -1,6 +1,6 @@
-const app = require("./app.js")
+import * as app from "./app.js";
 
-const { program } = require('commander');
+import {program} from 'commander';
 
 program
   .description('Split a string into substrings and display as an array')
@@ -16,7 +16,7 @@ const [input, output] = [program.args[0], program.args[1]];
 
 //console.log(input, output, options.baseUrl, options.disableDirectories);
 
-const fs = require("fs");
+import * as fs from 'fs';
 
 // Break glass in case of emergency:
 // Converter file -> blob

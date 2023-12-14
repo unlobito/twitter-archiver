@@ -16,6 +16,7 @@
   "homepage": "https://tinysubversions.com/twitter-archive/make-your-own/",
   "devDependencies": {
     "@types/adm-zip": "^0.5.5",
+    "@types/commander": "^2.12.2",
     "@types/node": "^20.10.4",
     "typescript": "^5.3.3"
   },

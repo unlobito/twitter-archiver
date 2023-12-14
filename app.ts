@@ -1,9 +1,13 @@
+import AdmZip from 'adm-zip';
+
 // @ts-ignore
 const webEnvironment = typeof document !== "undefined"
 let directoriesDisabled = webEnvironment && document.getElementById('disable-directories').checked;
 console.log('loaded...');
 
 const assert = require('node:assert').strict;
+type Known<T> = any extends T ? never : T; // h/t Aleksei
+function known<T> (t: Known<T>): Known<T> { return t;}
 
 // Remove the next three lines if you're gonna restore web support I guess
 assert(!webEnvironment, "Browser support currently believed to be broken.")
@@ -350,8 +354,6 @@ function parseZip(files:string[], {callback:{fallback, starting, filtering, maki
   (starting || fallback)("Starting...");
   const dateBefore = new Date();
   function handleFile(f) {
-    const AdmZip = require("adm-zip");
-
     const zip = new AdmZip(f);
 
     try {

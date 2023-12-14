@@ -4,6 +4,8 @@ This is a Node app that takes in your Twitter archive zip file, in the format th
 
 It is based on [Darius Kazemi's browser-based Twitter website generator](https://tinysubversions.com/twitter-archive/make-your-own/), with the primary difference being it can handle archives of larger than 4 gigabytes. These modifications were performed by Andi McClure, and do not have a license associated with them yet. This is a work-in-progress commit.
 
+Be advised that this app calls eval() on the Twitter zip input, which in the node context is kind of dangerous.
+
 ## Usage
 
 This app requires a relatively new Node. I am using 18.16.1.

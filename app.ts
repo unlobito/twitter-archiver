@@ -1,4 +1,5 @@
 import AdmZip from 'adm-zip';
+import {promisify} from 'util';
 
 // @ts-ignore
 const webEnvironment = typeof document !== "undefined"
@@ -345,7 +346,7 @@ body {
 }`;
 }
 
-function parseZip(files:string[], {callback:{fallback, starting, filtering, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, directoriesDisabled:_directoriesDisabled}:{callback?:{fallback?:(string)=>void, starting?:(string)=>void, filtering?:(string)=>void, makingThreads?:(string)=>void, makingHtml?:(string)=>void, makingSearch?:(string)=>void, makingMedia?:(string)=>void, doneFailure?:(string)=>void, doneSuccess?:(string)=>void}, baseUrl?:string, directoriesDisabled?:boolean}) {
+export function parseZip(files:string[], {callback:{fallback, starting, filtering, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, directoriesDisabled:_directoriesDisabled}:{callback?:{fallback?:(string)=>void, starting?:(string)=>void, filtering?:(string)=>void, makingThreads?:(string)=>void, makingHtml?:(string)=>void, makingSearch?:(string)=>void, makingMedia?:(string)=>void, doneFailure?:(string)=>void, doneSuccess?:(string)=>void}, baseUrl?:string, directoriesDisabled?:boolean}) {
   baseUrlOverride = baseUrl;
   const saveAs = null; // FIXME
   if (_directoriesDisabled != null)
@@ -355,13 +356,28 @@ function parseZip(files:string[], {callback:{fallback, starting, filtering, maki
   const dateBefore = new Date();
   function handleFile(f) {
     const zip = new AdmZip(f);
+    const entries = zip.getEntries();
+    const entryFilter = (prefix:string) => {
+      let result = new Map<string, AdmZip.IZipEntry>();
+      for (const entry of entries) {
+        const path = entry.entryName;
+        console.log("DEBUG DELETE ME", "check", prefix, "vs", path, path.startsWith(prefix), "dir", entry.isDirectory);
+        if (!entry.isDirectory && path.startsWith(prefix)) {
+          result[path] = entry;
+        }
+      }
+      return result;
+    }
 
     try {
         const dateAfter = new Date();
-        zip.file('data/manifest.js').async("string").then(function(content) {
+        const readAsTextDefault = (x,y) => zip.readAsText(x,y);
+        const readAsTextPromise = promisify(readAsTextDefault);
+        const readPromise = promisify((x:string | AdmZip.IZipEntry) => zip.readFile(x));
+        readAsTextPromise(zip.getEntry('data/manifest.js')).then(function(content) {
           if (typeof window == "undefined")
             window = {YTD:{tweet:{}}};
-          eval(content);
+          eval(content as string); // Oh no
           const tweetFiles = typeof window.__THAR_CONFIG.dataTypes.tweets == "undefined" ?
             window.__THAR_CONFIG.dataTypes.tweet.files :
             window.__THAR_CONFIG.dataTypes.tweets.files;
@@ -375,8 +391,8 @@ function parseZip(files:string[], {callback:{fallback, starting, filtering, maki
           let promises = [];
           for (const file of tweetFiles) {
             promises.push(new Promise((resolve, reject) => {
-              zip.file(file.fileName).async('string').then(tweetContent => {
-                eval(tweetContent);
+              readAsTextPromise(zip.getEntry(file.fileName)).then(tweetContent => {
+                eval(tweetContent as string); // Oh no no no
                 resolve(`done ${file.fileName}`);
               });
             }));
@@ -441,7 +457,7 @@ function parseZip(files:string[], {callback:{fallback, starting, filtering, maki
             siteZip.file(`app.js`, makeOutputAppJs(accountInfo));
             siteZip.file(`index.html`, makeOutputIndexHtml(accountInfo));
             (makingMedia || fallback)("Dropping in all your media files...");
-            zip.folder('data/tweets_media').forEach((relativePath, file) => {
+            entryFilter('data/tweets_media').forEach((file, relativePath) => { // TODO test this
               // only include this in the archive if it's original material we posted (not RTs)
               // grab the tweet id from the filename
               const matchId = relativePath.match(/^(.+?)-/);
@@ -454,7 +470,7 @@ function parseZip(files:string[], {callback:{fallback, starting, filtering, maki
                     && tweet.extended_entities.media.length > 0) {
                   // if this tweet has media and it's original material (not from a retweet), add it to the zip
                   if (!tweet.extended_entities.media[0].source_user_id_str || tweet.extended_entities.media[0].source_user_id_str === accountInfo.accountId.toString()) {
-                    siteZip.file(`${userName}/tweets_media/${relativePath}`, file.async('blob'));
+                    siteZip.file(`${userName}/tweets_media/${relativePath}`, readPromise(file));
                   }
                 }
               }
@@ -695,5 +711,3 @@ function makeOutputIndexHtml(accountInfo) {
 </html>`;
   return outputIndexHtml;
 }
-
-if (typeof module !== "undefined") module.exports = {parseZip}

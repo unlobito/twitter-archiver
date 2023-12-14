@@ -1,11 +1,17 @@
+// @ts-ignore
 const webEnvironment = typeof document !== "undefined"
 let directoriesDisabled = webEnvironment && document.getElementById('disable-directories').checked;
 console.log('loaded...');
 
 const assert = require('node:assert').strict;
-assert(!webEnvironment, "Browser support currently believed to be broken.") // Remove if you're gonna restore web support I guess
 
-let baseUrlOverride = null
+// Remove the next three lines if you're gonna restore web support I guess
+assert(!webEnvironment, "Browser support currently believed to be broken.")
+declare var document: any;
+declare var window: any;
+
+let baseUrlOverride:string|null = null;
+let tweets:any[]|null = null;
 
 function makeOpenGraph(tweet, accountInfo) {
   // trim trailing slash if included by user
@@ -335,12 +341,11 @@ body {
 }`;
 }
 
-function parseZip(files, {callback:{fallback, starting, filtering, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, saveAs, directoriesDisabled}) {
+function parseZip(files:string[], {callback:{fallback, starting, filtering, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, directoriesDisabled:_directoriesDisabled}:{callback?:{fallback?:(string)=>void, starting?:(string)=>void, filtering?:(string)=>void, makingThreads?:(string)=>void, makingHtml?:(string)=>void, makingSearch?:(string)=>void, makingMedia?:(string)=>void, doneFailure?:(string)=>void, doneSuccess?:(string)=>void}, baseUrl?:string, directoriesDisabled?:boolean}) {
   baseUrlOverride = baseUrl;
-  if (saveAs)
-    global.saveAs = saveAs;
-  if (directoriesDisabled != null)
-    global.directoriesDisabled = directoriesDisabled;
+  const saveAs = null; // FIXME
+  if (_directoriesDisabled != null)
+    directoriesDisabled = _directoriesDisabled;
 
   (starting || fallback)("Starting...");
   const dateBefore = new Date();
@@ -377,7 +382,8 @@ function parseZip(files, {callback:{fallback, starting, filtering, makingThreads
           // grab all the tweet data
           Promise.all(promises).then(values => {
             // when done...
-            const siteZip = new JSZip();
+            assert(false, "Got to jszip site");
+            const siteZip:any = null; //new JSZip();
 						siteZip.file(`styles.css`, makeStyles());
             // flatten the arrays of tweets into one big array
             tweets = [];
@@ -477,7 +483,7 @@ function parseZip(files, {callback:{fallback, starting, filtering, makingThreads
 
 // Note: No longer used
 function parseZipHtml() {
-  $output = document.getElementById('output');
+  let $output = document.getElementById('output');
   let fallback = (msg) => {
     $output.innerHTML += `<p>${msg}</p>`;
     document.querySelectorAll('body')[0].scrollIntoView(false);

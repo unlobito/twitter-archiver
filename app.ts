@@ -1,12 +1,14 @@
 import AdmZip from 'adm-zip';
-import {promisify} from 'util';
+import {promisify} from 'node:util';
+import {join as pathJoin} from 'node:path';
+import {writeFile as fsWriteFile} from 'node:fs/promises';
+import assert from 'node:assert';
 
 // @ts-ignore
 const webEnvironment = typeof document !== "undefined"
 let directoriesDisabled = webEnvironment && document.getElementById('disable-directories').checked;
 console.log('loaded...');
 
-const assert = require('node:assert').strict;
 type Known<T> = any extends T ? never : T; // h/t Aleksei
 function known<T> (t: Known<T>): Known<T> { return t;}
 
@@ -346,9 +348,9 @@ body {
 }`;
 }
 
-export function parseZip(files:string[], {callback:{fallback, starting, filtering, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, directoriesDisabled:_directoriesDisabled}:{callback?:{fallback?:(string)=>void, starting?:(string)=>void, filtering?:(string)=>void, makingThreads?:(string)=>void, makingHtml?:(string)=>void, makingSearch?:(string)=>void, makingMedia?:(string)=>void, doneFailure?:(string)=>void, doneSuccess?:(string)=>void}, baseUrl?:string, directoriesDisabled?:boolean}) {
+export function parseZip(files:string[], {callback:{fallback, starting, filtering, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, directoriesDisabled:_directoriesDisabled, saveAs, saveAsDirectory}:{callback?:{fallback?:(string)=>void, starting?:(string)=>void, filtering?:(string)=>void, makingThreads?:(string)=>void, makingHtml?:(string)=>void, makingSearch?:(string)=>void, makingMedia?:(string)=>void, doneFailure?:(string)=>void, doneSuccess?:(string)=>void}, baseUrl?:string, directoriesDisabled?:boolean, saveAs?:string, saveAsDirectory?:boolean}) {
+  assert(saveAs, "No save destination given");
   baseUrlOverride = baseUrl;
-  const saveAs = null; // FIXME
   if (_directoriesDisabled != null)
     directoriesDisabled = _directoriesDisabled;
 
@@ -371,9 +373,9 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
 
     try {
         const dateAfter = new Date();
-        const readAsTextDefault = (x,y) => zip.readAsText(x,y);
+        const readAsTextDefault = (x,y) => zip.readAsTextAsync(x,y);
         const readAsTextPromise = promisify(readAsTextDefault);
-        const readPromise = promisify((x:string | AdmZip.IZipEntry) => zip.readFile(x));
+        const readPromise: (arg1: string | AdmZip.IZipEntry) => Promise<Buffer> = promisify((x:string | AdmZip.IZipEntry) => zip.readFile(x));
         readAsTextPromise(zip.getEntry('data/manifest.js')).then(function(content) {
           if (typeof window == "undefined")
             window = {YTD:{tweet:{}}};
@@ -394,15 +396,25 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
               readAsTextPromise(zip.getEntry(file.fileName)).then(tweetContent => {
                 eval(tweetContent as string); // Oh no no no
                 resolve(`done ${file.fileName}`);
-              });
+              }).catch(reject);
             }));
           }
           // grab all the tweet data
           Promise.all(promises).then(values => {
             // when done...
-            assert(false, "Got to jszip site");
-            const siteZip:any = null; //new JSZip();
-						siteZip.file(`styles.css`, makeStyles());
+            const sitePromises = [];
+            const siteZip = saveAsDirectory ? null : new AdmZip(saveAs);
+            function saveFile(path:string, content:Buffer|string) {
+              if (saveAsDirectory) {
+                const diskPath = pathJoin(saveAs, path);
+                fsWriteFile(diskPath, content); // Async; just assume it completes.
+              } else {
+                const contentBuffer = content instanceof Buffer ? content : Buffer.from(content);
+                siteZip.addFile(path, contentBuffer);
+                siteZip.writeZip(); // Hopefully keep memory residency down?
+              }
+            }
+						saveFile(`styles.css`, makeStyles());
             // flatten the arrays of tweets into one big array
             tweets = [];
             (filtering || fallback)("Filtering and flattening tweets...");
@@ -436,9 +448,9 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
             for (const tweet of tweets) {
                 let id = tweet.id_str || tweet.id;
                 if (directoriesDisabled) {
-                  siteZip.file(`${userName}/status/${id}.html`, makePage(tweet, accountInfo));
+                  saveFile(`${userName}/status/${id}.html`, makePage(tweet, accountInfo));
                 } else {
-                  siteZip.file(`${userName}/status/${id}/index.html`, makePage(tweet, accountInfo));
+                  saveFile(`${userName}/status/${id}/index.html`, makePage(tweet, accountInfo));
                 }
             }
             (makingSearch || fallback)("Making all the HTML pages...");
@@ -453,9 +465,9 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
                     retweet_count: tweet.retweet_count,
                   };
                 });
-            siteZip.file(`searchDocuments.js`, 'const searchDocuments = ' + JSON.stringify(searchDocuments));
-            siteZip.file(`app.js`, makeOutputAppJs(accountInfo));
-            siteZip.file(`index.html`, makeOutputIndexHtml(accountInfo));
+            saveFile(`searchDocuments.js`, 'const searchDocuments = ' + JSON.stringify(searchDocuments));
+            saveFile(`app.js`, makeOutputAppJs(accountInfo));
+            saveFile(`index.html`, makeOutputIndexHtml(accountInfo));
             (makingMedia || fallback)("Dropping in all your media files...");
             entryFilter('data/tweets_media').forEach((file, relativePath) => { // TODO test this
               // only include this in the archive if it's original material we posted (not RTs)
@@ -470,30 +482,34 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
                     && tweet.extended_entities.media.length > 0) {
                   // if this tweet has media and it's original material (not from a retweet), add it to the zip
                   if (!tweet.extended_entities.media[0].source_user_id_str || tweet.extended_entities.media[0].source_user_id_str === accountInfo.accountId.toString()) {
-                    siteZip.file(`${userName}/tweets_media/${relativePath}`, readPromise(file));
+                    const nextPromise = readPromise(file).then(buffer => saveFile(`${userName}/tweets_media/${relativePath}`, buffer));
+                    sitePromises.push(nextPromise);
                   }
                 }
               }
             });
-            siteZip.generateAsync({ type: 'blob' }).then(blob => {
-              saveAs(blob, 'archive.zip');
+            let okayDone = () => { // FIXME: Would be nice to wait on some of the promises above.
               console.log('DONE');
               (doneSuccess || fallback)(`<strong>DONE!!!</strong> Check your browser downloads for "archive.zip", and then unzip it on a web server somewhere. <em>It is likely to be much smaller than your original zip because it won't have media for stuff you retweeted.</em> I highly recommend that you upload the zip file itself to the server and unzip it once it's there. That way your file transfer will go much faster than if you try to unzip it localy and then upload 100k files. If you are using something like cPanel on your host, I believe most versions of that let you unzip a file you've uploaded somewhere in the user interface.`);
-            }, err => { console.log('ERR', err);
-              (doneFailure || fallback)(err.toString());
-            });
-          });
-        });
+            }
+            Promise.all(sitePromises).then(okayDone).catch(standardError);
+            console.log("Awaiting promises");
+          }).catch(standardError);
+        }).catch(standardError);
       } catch(error) {
-        (doneFailure || fallback)(`Error! ${error.toString()}`);
-        if (error.toString().includes('TypeError')) {
-          (doneFailure || fallback)(`I am guessing that your zip file is missing some files. It is also possible that you unzipped and re-zipped your file and the data is in an extra subdirectory. Check out the "Known problems" section above. You'll need the "data" directory to be in the zip root, not living under some other directory.`);
-        }
-        if (error.toString().includes('Corrupted')) {
-          (doneFailure || fallback)(`I am guessing that your archive is too big! If it's more than 2GB you're likely to see this error. If you look above at the "Known problems" section, you'll see a potential solution. Sorry it is a bit of a pain in the ass.`);
-        }
+        standardError(error);
       }
   }
+  var standardError = (error) => {
+    (doneFailure || fallback)(`Error! ${error.toString()}`);
+    if (error.toString().includes('TypeError')) {
+      (doneFailure || fallback)(`I am guessing that your zip file is missing some files. It is also possible that you unzipped and re-zipped your file and the data is in an extra subdirectory. Check out the "Known problems" section above. You'll need the "data" directory to be in the zip root, not living under some other directory.`);
+    }
+    if (error.toString().includes('Corrupted')) {
+      (doneFailure || fallback)(`I am guessing that your archive is too big! If it's more than 2GB you're likely to see this error. If you look above at the "Known problems" section, you'll see a potential solution. Sorry it is a bit of a pain in the ass.`);
+    }
+  };
+  assert.equal(files.length, 1, "Currently only single-file-at-once supported"); // TODO Does multiple-in out to one output or what? What is the intent
   for (const file of files) {
     handleFile(file);
   }

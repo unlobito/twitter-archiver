@@ -5,7 +5,7 @@ import {program} from 'commander';
 program
   .description('Split a string into substrings and display as an array')
   .argument('<input>', 'zip file to read')
-  .argument('<output>', 'zip file to write')
+  .argument('<output>', 'directory to write (or zip file if ending in .zip)')
   .option('-b, --base-url <char>')
   .option('-d, --disable-directories')
   ;
@@ -32,7 +32,9 @@ async function run() { // Must function wrap so we can use async at toplevel
   app.parseZip([input], {
     callback:{fallback, doneFailure, doneSuccess},
     baseUrl:options.baseUrl || '',
-    directoriesDisabled:options.disableDirectories
+    directoriesDisabled:options.disableDirectories,
+    saveAs:output,
+    saveAsDirectory:output.endsWith(".zip")
   });
 }
 run();

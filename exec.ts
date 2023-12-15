@@ -34,7 +34,7 @@ async function run() { // Must function wrap so we can use async at toplevel
     baseUrl:options.baseUrl || '',
     directoriesDisabled:options.disableDirectories,
     saveAs:output,
-    saveAsDirectory:output.endsWith(".zip")
+    saveAsDirectory:!output.endsWith(".zip")
   });
 }
 run();

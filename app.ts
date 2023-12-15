@@ -373,12 +373,12 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
 
     try {
         const dateAfter = new Date();
-        const readAsTextDefault = (x,y) => zip.readAsTextAsync(x,y);
-        const readAsTextPromise = promisify(readAsTextDefault);
-        const readPromise: (arg1: string | AdmZip.IZipEntry) => Promise<Buffer> = promisify((x:string | AdmZip.IZipEntry) => zip.readFile(x));
+        const admPromisify1 = (f) => promisify((a1,callback) => f(a1, (x,y) => callback(y,x))); // This is AWFUL: AdmZip does its callback args in opposite order from Node
+        const readAsTextPromise = admPromisify1((x,y) => zip.readAsTextAsync(x,y,"utf8"));
+        const readPromise = admPromisify1(zip.readFileAsync) as (arg1: string | AdmZip.IZipEntry) => Promise<Buffer>;
         readAsTextPromise(zip.getEntry('data/manifest.js')).then(function(content) {
           if (typeof window == "undefined")
-            window = {YTD:{tweet:{}}};
+            globalThis.window = {YTD:{tweet:{}}};
           eval(content as string); // Oh no
           const tweetFiles = typeof window.__THAR_CONFIG.dataTypes.tweets == "undefined" ?
             window.__THAR_CONFIG.dataTypes.tweet.files :
@@ -403,7 +403,7 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
           Promise.all(promises).then(values => {
             // when done...
             const sitePromises = [];
-            const siteZip = saveAsDirectory ? null : new AdmZip(saveAs);
+            const siteZip = saveAsDirectory ? null : new AdmZip();
             function saveFile(path:string, content:Buffer|string) {
               if (saveAsDirectory) {
                 const diskPath = pathJoin(saveAs, path);
@@ -411,7 +411,6 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
               } else {
                 const contentBuffer = content instanceof Buffer ? content : Buffer.from(content);
                 siteZip.addFile(path, contentBuffer);
-                siteZip.writeZip(); // Hopefully keep memory residency down?
               }
             }
 						saveFile(`styles.css`, makeStyles());
@@ -492,16 +491,20 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
               console.log('DONE');
               (doneSuccess || fallback)(`<strong>DONE!!!</strong> Check your browser downloads for "archive.zip", and then unzip it on a web server somewhere. <em>It is likely to be much smaller than your original zip because it won't have media for stuff you retweeted.</em> I highly recommend that you upload the zip file itself to the server and unzip it once it's there. That way your file transfer will go much faster than if you try to unzip it localy and then upload 100k files. If you are using something like cPanel on your host, I believe most versions of that let you unzip a file you've uploaded somewhere in the user interface.`);
             }
-            Promise.all(sitePromises).then(okayDone).catch(standardError);
+            Promise.all(sitePromises).then(() => {
+              if (!saveAsDirectory) {
+                siteZip.writeZip(saveAs);
+              }
+            }).then(okayDone).catch(standardError(1));
             console.log("Awaiting promises");
-          }).catch(standardError);
-        }).catch(standardError);
+          }).catch(standardError(2));
+        }).catch(standardError(3));
       } catch(error) {
-        standardError(error);
+        standardError(4)(error);
       }
   }
-  var standardError = (error) => {
-    (doneFailure || fallback)(`Error! ${error.toString()}`);
+  var standardError = (site) => (error) => {
+    (doneFailure || fallback)(`At site ${site}, stack ${error.stack}:\n${error.toString()}`);
     if (error.toString().includes('TypeError')) {
       (doneFailure || fallback)(`I am guessing that your zip file is missing some files. It is also possible that you unzipped and re-zipped your file and the data is in an extra subdirectory. Check out the "Known problems" section above. You'll need the "data" directory to be in the zip root, not living under some other directory.`);
     }

@@ -1,8 +1,10 @@
 import AdmZip from 'adm-zip';
 import {promisify} from 'node:util';
 import {join as pathJoin, dirname as pathDirname} from 'node:path';
-import {writeFile as fsWriteFile, mkdir as fsMkdir} from 'node:fs/promises';
+import fsExtra from 'fs-extra';
 import assert from 'node:assert';
+
+const [fsWriteFile, fsMkdir] = [fsExtra.writeFile, fsExtra.mkdir];
 
 // @ts-ignore
 const webEnvironment = typeof document !== "undefined"

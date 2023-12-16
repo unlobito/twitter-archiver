@@ -21,8 +21,10 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "@types/fs-extra": "^11.0.4",
     "adm-zip": "^0.5.10",
-    "commander": "^11.0.0"
+    "commander": "^11.0.0",
+    "fs-extra": "^11.2.0"
   },
-  "type":"module"
+  "type": "module"
 }

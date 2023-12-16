@@ -1,7 +1,7 @@
 import AdmZip from 'adm-zip';
 import {promisify} from 'node:util';
-import {join as pathJoin} from 'node:path';
-import {writeFile as fsWriteFile} from 'node:fs/promises';
+import {join as pathJoin, dirname as pathDirname} from 'node:path';
+import {writeFile as fsWriteFile, mkdir as fsMkdir} from 'node:fs/promises';
 import assert from 'node:assert';
 
 // @ts-ignore
@@ -359,13 +359,12 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
   function handleFile(f) {
     const zip = new AdmZip(f);
     const entries = zip.getEntries();
-    const entryFilter = (prefix:string) => {
+    const entryFilter = (prefix:RegExp) => {
       let result = new Map<string, AdmZip.IZipEntry>();
       for (const entry of entries) {
         const path = entry.entryName;
-        console.log("DEBUG DELETE ME", "check", prefix, "vs", path, path.startsWith(prefix), "dir", entry.isDirectory);
-        if (!entry.isDirectory && path.startsWith(prefix)) {
-          result[path] = entry;
+        if (!entry.isDirectory && path.match(prefix)) {
+          result.set(path.replace(prefix, ""), entry);
         }
       }
       return result;
@@ -376,6 +375,11 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
         const admPromisify1 = (f) => promisify((a1,callback) => f(a1, (x,y) => callback(y,x))); // This is AWFUL: AdmZip does its callback args in opposite order from Node
         const readAsTextPromise = admPromisify1((x,y) => zip.readAsTextAsync(x,y,"utf8"));
         const readPromise = admPromisify1(zip.readFileAsync) as (arg1: string | AdmZip.IZipEntry) => Promise<Buffer>;
+        function pushIf<T>(ary:T[], value:T|null) {
+          if (value != null) {
+            ary.push(value);
+          }
+        }
         readAsTextPromise(zip.getEntry('data/manifest.js')).then(function(content) {
           if (typeof window == "undefined")
             globalThis.window = {YTD:{tweet:{}}};
@@ -407,13 +411,16 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
             function saveFile(path:string, content:Buffer|string) {
               if (saveAsDirectory) {
                 const diskPath = pathJoin(saveAs, path);
-                fsWriteFile(diskPath, content); // Async; just assume it completes.
+                return fsMkdir(pathDirname(diskPath), {'recursive':true}).then(() =>
+                  fsWriteFile(diskPath, content) // Async; just assume it completes.
+                );
               } else {
                 const contentBuffer = content instanceof Buffer ? content : Buffer.from(content);
                 siteZip.addFile(path, contentBuffer);
+                return null
               }
             }
-						saveFile(`styles.css`, makeStyles());
+						pushIf(sitePromises, saveFile(`styles.css`, makeStyles()));
             // flatten the arrays of tweets into one big array
             tweets = [];
             (filtering || fallback)("Filtering and flattening tweets...");
@@ -447,9 +454,9 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
             for (const tweet of tweets) {
                 let id = tweet.id_str || tweet.id;
                 if (directoriesDisabled) {
-                  saveFile(`${userName}/status/${id}.html`, makePage(tweet, accountInfo));
+                  pushIf(sitePromises, saveFile(`${userName}/status/${id}.html`, makePage(tweet, accountInfo)));
                 } else {
-                  saveFile(`${userName}/status/${id}/index.html`, makePage(tweet, accountInfo));
+                  pushIf(sitePromises, saveFile(`${userName}/status/${id}/index.html`, makePage(tweet, accountInfo)));
                 }
             }
             (makingSearch || fallback)("Making all the HTML pages...");
@@ -464,11 +471,11 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
                     retweet_count: tweet.retweet_count,
                   };
                 });
-            saveFile(`searchDocuments.js`, 'const searchDocuments = ' + JSON.stringify(searchDocuments));
-            saveFile(`app.js`, makeOutputAppJs(accountInfo));
-            saveFile(`index.html`, makeOutputIndexHtml(accountInfo));
+            pushIf(sitePromises, saveFile(`searchDocuments.js`, 'const searchDocuments = ' + JSON.stringify(searchDocuments)));
+            pushIf(sitePromises, saveFile(`app.js`, makeOutputAppJs(accountInfo)));
+            pushIf(sitePromises, saveFile(`index.html`, makeOutputIndexHtml(accountInfo)));
             (makingMedia || fallback)("Dropping in all your media files...");
-            entryFilter('data/tweets_media').forEach((file, relativePath) => { // TODO test this
+            entryFilter(/^data\/tweets?_media\//).forEach((file, relativePath) => { // TODO test this
               // only include this in the archive if it's original material we posted (not RTs)
               // grab the tweet id from the filename
               const matchId = relativePath.match(/^(.+?)-/);

@@ -1,6 +1,11 @@
 import * as app from "./app.js";
 
 import {program} from 'commander';
+import {dirname as pathDirname, isAbsolute as pathIsAbsolute, join as pathJoin} from 'node:path';
+import {readFileSync as fsReadFileSync} from 'node:fs';
+import {fileURLToPath as urlFileURLToPath} from 'node:url';
+
+import * as toml from 'toml';
 
 program
   .description('Split a string into substrings and display as an array')
@@ -8,6 +13,7 @@ program
   .argument('<output>', 'directory to write (or zip file if ending in .zip)')
   .option('-b, --base-url <char>')
   .option('-d, --disable-directories')
+  .option('-c, --config <path>', 'toml file (see sample.toml for format)')
   ;
 
 program.parse();
@@ -18,12 +24,28 @@ const [input, output] = [program.args[0], program.args[1]];
 
 import * as fs from 'fs';
 
-// Break glass in case of emergency:
-// Converter file -> blob
-// thanks easrng on mastodon
-//const stream = require("stream")
-//const readBlob = async (path) =>
-//  await new Response(stream.Readable.toWeb(fs.createReadStream(path))).blob();
+let config:any = {};
+const configPath = options.config;
+function relativizePath(path, base) {
+  if (!path) return;
+  if (pathIsAbsolute(path)) return path;
+  return pathJoin(base, path);
+}
+try { // Included sample.toml as base config
+  const __dirname = urlFileURLToPath(new URL('.', import.meta.url)); // __dirname not provided by default in ESM Node
+  config = toml.parse(fsReadFileSync(pathJoin(__dirname, "sample.toml"), 'utf-8')).config;
+  config.dir = __dirname;
+  config.avatar = relativizePath(config.avatar, config.dir); // Postprocess
+} catch (e) {
+  console.log("Warning: file 'sample.toml' not found! Should have been distributed with exec.js. Program may crash because of this.", e);
+}
+
+if (configPath) { // User config overwrites only included files
+  config.dir = pathDirname(configPath);
+  const userConfig = toml.parse(fsReadFileSync(configPath, 'utf-8')).config;
+  userConfig.avatar = relativizePath(userConfig.avatar, config.dir); // Postprocess
+  Object.assign(config, userConfig);
+}
 
 async function run() { // Must function wrap so we can use async at toplevel
   let fallback = (msg) => { console.log(msg); };
@@ -35,6 +57,6 @@ async function run() { // Must function wrap so we can use async at toplevel
     directoriesDisabled:options.disableDirectories,
     saveAs:output,
     saveAsDirectory:!output.endsWith(".zip")
-  });
+  }, config);
 }
 run();

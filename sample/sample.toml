@@ -1,0 +1,4 @@
+[config]
+
+# Path relative to the toml file
+avatar = "egg.jpg"

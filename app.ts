@@ -1,10 +1,12 @@
 import AdmZip from 'adm-zip';
 import {promisify} from 'node:util';
-import {join as pathJoin, dirname as pathDirname} from 'node:path';
+import {basename as pathBasename, dirname as pathDirname, join as pathJoin} from 'node:path';
 import fsExtra from 'fs-extra';
 import assert from 'node:assert';
 
 const [fsWriteFile, fsMkdir] = [fsExtra.writeFile, fsExtra.mkdir];
+
+// Note: Tweets rendered in 3 places; look for 🔗
 
 // @ts-ignore
 const webEnvironment = typeof document !== "undefined"
@@ -114,10 +116,10 @@ function makeTweet(tweet, accountInfo, threadStatus) {
   	    </p>
   	    <p class="created_at">
   	      ${new Date(tweet.created_at).toLocaleString()}
+          <a class="permalink" href="../${tweet.id_str}">🔗</a>
   	    </p>
   	    <p class="favorite_count">Favs: ${tweet.favorite_count}</p>
   	    <p class="retweet_count">Retweets: ${tweet.retweet_count}</p>
-  	    <a class="permalink" href="../${tweet.id_str}">link</a>
   	  </article>
 `;
   articles.push(article);
@@ -350,8 +352,9 @@ body {
 }`;
 }
 
-export function parseZip(files:string[], {callback:{fallback, starting, filtering, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, directoriesDisabled:_directoriesDisabled, saveAs, saveAsDirectory}:{callback?:{fallback?:(string)=>void, starting?:(string)=>void, filtering?:(string)=>void, makingThreads?:(string)=>void, makingHtml?:(string)=>void, makingSearch?:(string)=>void, makingMedia?:(string)=>void, doneFailure?:(string)=>void, doneSuccess?:(string)=>void}, baseUrl?:string, directoriesDisabled?:boolean, saveAs?:string, saveAsDirectory?:boolean}) {
+export function parseZip(files:string[], {callback:{fallback, starting, filtering, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, directoriesDisabled:_directoriesDisabled, saveAs, saveAsDirectory}:{callback?:{fallback?:(string)=>void, starting?:(string)=>void, filtering?:(string)=>void, makingThreads?:(string)=>void, makingHtml?:(string)=>void, makingSearch?:(string)=>void, makingMedia?:(string)=>void, doneFailure?:(string)=>void, doneSuccess?:(string)=>void}, baseUrl?:string, directoriesDisabled?:boolean, saveAs?:string, saveAsDirectory?:boolean}, config:{dir?:string, avatar?:string}) {
   assert(saveAs, "No save destination given");
+  assert(config.dir != null, "Neither sample.toml nor a --config option file were found.")
   baseUrlOverride = baseUrl;
   if (_directoriesDisabled != null)
     directoriesDisabled = _directoriesDisabled;
@@ -423,6 +426,8 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
               }
             }
 						pushIf(sitePromises, saveFile(`styles.css`, makeStyles()));
+            // Copy user-specified avatar file (from real hard drive)
+            pushIf(sitePromises, fsExtra.readFile(config.avatar).then(buffer => saveFile(`${userName}/avatar/${pathBasename(config.avatar)}`, buffer)));
             // flatten the arrays of tweets into one big array
             tweets = [];
             (filtering || fallback)("Filtering and flattening tweets...");
@@ -544,7 +549,7 @@ function parseZipHtml() {
     document.getElementById('loading').hidden = true;
     document.querySelectorAll('body')[0].scrollIntoView(false);
   }
-  parseZip(document.getElementById('file').files, {callback:{starting, fallback, doneFailure}});
+  parseZip(document.getElementById('file').files, {callback:{starting, fallback, doneFailure}}, {});
 }
 
 function makeOutputAppJs(accountInfo) {
@@ -632,7 +637,7 @@ function sortResults(criterion) {
 }
 
 function renderResults() {
-  const output = results.map(item => \`<p class="search_item"><div class="search_link"><a href="${accountInfo.userName}/status/\${item.id_str}">link</a></div> <div class="search_text">\${item.full_text}</div><div class="search_time">\${new Date(item.created_at).toLocaleString()}</div><hr class="search_divider" /></p>\`.replace(/\\.\\.\\/\\.\\.\\/tweets_media\\//g,'${accountInfo.userName}/tweets_media/'));
+  const output = results.map(item => \`<p class="search_item"><div class="search_text">\${item.full_text}</div><div class="search_time">\${new Date(item.created_at).toLocaleString()} <div class="search_link"><a href="${accountInfo.userName}/status/\${item.id_str}">🔗</a></div></div><hr class="search_divider" /></p>\`.replace(/\\.\\.\\/\\.\\.\\/tweets_media\\//g,'${accountInfo.userName}/tweets_media/'));
   document.getElementById('output').innerHTML = output.join('');
   if (results.length > 0) {
     document.getElementById('output').innerHTML += '<a href="#tabs">top &uarr;</a>';
@@ -688,7 +693,7 @@ document.getElementById('page-num').max = pageMax;
 document.getElementById('page-num').min = 1;
 
 function renderBrowse() {
-  const output = browseDocuments.slice(browseIndex, browseIndex + pageSize).map(item => \`<p class="search_item"><div class="search_link"><a href="${accountInfo.userName}/status/\${item.id_str}">link</a></div> <div class="search_text">\${item.full_text}</div><div class="search_time">\${new Date(item.created_at).toLocaleString()}</div><hr class="search_divider" /></p>\`.replace(/\\.\\.\\/\\.\\.\\/tweets_media\\//g,'${accountInfo.userName}/tweets_media/'));
+  const output = browseDocuments.slice(browseIndex, browseIndex + pageSize).map(item => \`<p class="search_item"><!-- Avatar here --><div class="search_text">\${item.full_text}</div><div class="search_link"><div class="search_time">\${new Date(item.created_at).toLocaleString()}</div> <a href="${accountInfo.userName}/status/\${item.id_str}">🔗</a></div><hr class="search_divider" /></p>\`.replace(/\\.\\.\\/\\.\\.\\/tweets_media\\//g,'${accountInfo.userName}/tweets_media/'));
   document.getElementById('browse-output').innerHTML = output.join('');
   document.getElementById('browse-output').innerHTML += '<a href="#tabs">top &uarr;</a>';
 }

@@ -1,3 +1,7 @@
+The file sample/egg.jpg is included as a historical example of a Twitter avatar, in hopes that this inclusion is covered by fair use.
+
+Other than that file:
+
 Copyright (c) 2023 Andi McClure
 
 Permission is hereby granted, free of charge, to any person

@@ -3,7 +3,7 @@
   "description": "Make your own simple, public, searchable Twitter archive",
   "version": "1.0.0",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && copyfiles -f -E sample/sample.toml build && copyfiles -f -E sample/egg.jpg build",
     "exec": "node build/exec.js"
   },
   "repository": {
@@ -18,13 +18,15 @@
     "@types/adm-zip": "^0.5.5",
     "@types/commander": "^2.12.2",
     "@types/node": "^20.10.4",
+    "copyfiles": "^2.4.1",
     "typescript": "^5.3.3"
   },
   "dependencies": {
     "@types/fs-extra": "^11.0.4",
     "adm-zip": "^0.5.10",
     "commander": "^11.0.0",
-    "fs-extra": "^11.2.0"
+    "fs-extra": "^11.2.0",
+    "toml": "^3.0.0"
   },
   "type": "module"
 }

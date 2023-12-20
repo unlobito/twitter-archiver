@@ -36,6 +36,7 @@ try { // Included sample.toml as base config
   config = toml.parse(fsReadFileSync(pathJoin(__dirname, "sample.toml"), 'utf-8')).config;
   config.dir = __dirname;
   config.avatar = relativizePath(config.avatar, config.dir); // Postprocess
+  config.robots = relativizePath(config.robots, config.dir); // NOOP
 } catch (e) {
   console.log("Warning: file 'sample.toml' not found! Should have been distributed with exec.js. Program may crash because of this.", e);
 }
@@ -44,6 +45,7 @@ if (configPath) { // User config overwrites only included files
   config.dir = pathDirname(configPath);
   const userConfig = toml.parse(fsReadFileSync(configPath, 'utf-8')).config;
   userConfig.avatar = relativizePath(userConfig.avatar, config.dir); // Postprocess
+  userConfig.robots = relativizePath(userConfig.robots, config.dir); // Postprocess
   Object.assign(config, userConfig);
 }
 

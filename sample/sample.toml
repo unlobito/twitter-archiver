@@ -2,3 +2,23 @@
 
 # Path relative to the toml file
 avatar = "egg.jpg"
+
+# Override display name
+# name = "egg"
+
+# Set true to suppress "sort by oldest"
+# suppress_oldest = true
+
+# Title at top of generated index.
+# title = "@username Twitter archive"
+
+# Shown at top of generated index. May contain HTML
+introduction = """
+This is a page where you can search many of my tweets, get a link to an archived version, and view all the content in nice, threaded form where applicable. This does not include replies to other people in this archive, so this is just "standalone" tweets and threads.
+"""
+
+# Shown at bottom of generated index. May contain HTML
+# footer = "All rights reserved"
+
+# Will be copied into root as robots.txt. Path relative to the toml file
+# robots = "robots.txt"

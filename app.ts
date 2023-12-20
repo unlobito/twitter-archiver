@@ -67,7 +67,7 @@ function formatTweet(tweet) {
       if (media.type === 'photo') {
         const fileNameMatch = media.media_url.match(/(?:.+\/)(.+)/);
         const newUrl = `${directoriesDisabled ? '../' : ''}../../tweets_media/${tweet.id_str || tweet.id}-${fileNameMatch ? fileNameMatch[1] : ''}`;
-        medias.push(`<li><a href="${newUrl}"><img src="${newUrl}"></a></li>`);
+        medias.push(`<li><a target="_blank" href="${newUrl}"><img src="${newUrl}"></a></li>`);
       }
       if (media.type === 'video') {
         const variantVideos = media.video_info.variants.filter(item => item.content_type === 'video/mp4');
@@ -105,12 +105,17 @@ function makeTweet(tweet, accountInfo, threadStatus) {
   // now render this main tweet
   const article = `
   	  <article class="tweet ${threadStatus === 'parent' ? 'parent' : ''} ${threadStatus === 'child' ? 'child' : ''}" ${threadStatus === 'main' ? 'id="main"' : ''}>
-  	    <p class="display_name">
-  	      ${accountInfo.displayName}
-  	    </p>
-  	    <p class="user_name">
-  	      @${accountInfo.userName}
-  	    </p>
+  	    <div class="flex-cols">
+          <a href="../../.."><img class="article_avatar" src="../../../${accountInfo.avatarPath}" /></a>
+          <div>
+            <p class="display_name">
+      	      ${accountInfo.displayName}
+      	    </p>
+            <p class="user_name">
+              <a href="../..">@${accountInfo.userName}</a>
+            </p>
+          </div>
+        </div>
   	    <p class="full_text">
   	      ${tweet.full_text}
   	    </p>
@@ -175,10 +180,12 @@ body {
   width: 100%;
 }
 .search_time {
-  margin-top: 4px;
+  display: inline;
+  font-size:0.75em;
 }
 .search_text {
-  display: inline;
+  display: block;
+  margin-bottom: 4px;
 }
 .search_link {
   display: inline;
@@ -199,6 +206,14 @@ body {
 .flex-wrap {
   display: flex;
   flex-direction: column;
+}
+.flex-cols {
+  display: flex;
+  flex-direction: row;
+}
+.tweet img.article_avatar {
+  width:64px;
+  margin-right:1em;
 }
 .tweet {
     background-color: #e8e8e8;
@@ -229,28 +244,36 @@ body {
   margin-bottom: 0px;
 }
 .tweet li {
-  height: 20vh;
   width: 20vh;
   flex-grow: 1;
 }
 .tweet .display_name {
   margin-bottom: 0;
   margin-top: 0;
+  font-weight:bold
 }
 .tweet .user_name {
   margin-top: 4px;
+  font-size:0.75em;
 }
+.tweet .user_name a { text-decoration: none; }
+.tweet .user_name a:hover { text-decoration: underline; }
+a.permalink { text-decoration: none; }
+a.permalink:hover { background-color:#666666 }
 .tweet .favorite_count {
   display: inline-block;
   margin-bottom: 0;
+  font-size:0.75em;
 }
 .tweet .retweet_count {
   display: inline-block;
   margin-left: 16px;
   margin-bottom: 0;
+  font-size:0.75em;
 }
 .tweet .created_at {
   margin-bottom: 0;
+  font-size:0.75em;
 }
 .tweet .permalink {
   margin-left: 16px;
@@ -352,7 +375,7 @@ body {
 }`;
 }
 
-export function parseZip(files:string[], {callback:{fallback, starting, filtering, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, directoriesDisabled:_directoriesDisabled, saveAs, saveAsDirectory}:{callback?:{fallback?:(string)=>void, starting?:(string)=>void, filtering?:(string)=>void, makingThreads?:(string)=>void, makingHtml?:(string)=>void, makingSearch?:(string)=>void, makingMedia?:(string)=>void, doneFailure?:(string)=>void, doneSuccess?:(string)=>void}, baseUrl?:string, directoriesDisabled?:boolean, saveAs?:string, saveAsDirectory?:boolean}, config:{dir?:string, avatar?:string}) {
+export function parseZip(files:string[], {callback:{fallback, starting, filtering, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, directoriesDisabled:_directoriesDisabled, saveAs, saveAsDirectory}:{callback?:{fallback?:(string)=>void, starting?:(string)=>void, filtering?:(string)=>void, makingThreads?:(string)=>void, makingHtml?:(string)=>void, makingSearch?:(string)=>void, makingMedia?:(string)=>void, doneFailure?:(string)=>void, doneSuccess?:(string)=>void}, baseUrl?:string, directoriesDisabled?:boolean, saveAs?:string, saveAsDirectory?:boolean}, config:{dir?:string, avatar?:string, name?:string, title?:string, introduction?:string, footer?:string, robots?:string, suppress_oldest?:boolean}) {
   assert(saveAs, "No save destination given");
   assert(config.dir != null, "Neither sample.toml nor a --config option file were found.")
   baseUrlOverride = baseUrl;
@@ -393,10 +416,13 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
             window.__THAR_CONFIG.dataTypes.tweet.files :
             window.__THAR_CONFIG.dataTypes.tweets.files;
           const userName = window.__THAR_CONFIG.userInfo.userName;
-          const displayName = window.__THAR_CONFIG.userInfo.displayName;
+          const displayName = config.name || window.__THAR_CONFIG.userInfo.displayName;
           const accountId = window.__THAR_CONFIG.userInfo.accountId;
+          const siteAvatarPath = `${userName}/avatar/${pathBasename(config.avatar)}`;
           const accountInfo = {
             userName, displayName, accountId,
+            avatarPath:siteAvatarPath, introduction:config.introduction, title:config.title, footer:config.footer,
+            suppressOldest: config.suppress_oldest,
           };
           // set up for grabbing all the tweet data
           let promises = [];
@@ -427,7 +453,10 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
             }
 						pushIf(sitePromises, saveFile(`styles.css`, makeStyles()));
             // Copy user-specified avatar file (from real hard drive)
-            pushIf(sitePromises, fsExtra.readFile(config.avatar).then(buffer => saveFile(`${userName}/avatar/${pathBasename(config.avatar)}`, buffer)));
+            pushIf(sitePromises, fsExtra.readFile(config.avatar).then(buffer => saveFile(siteAvatarPath, buffer)));
+            if (config.robots) {
+              pushIf(sitePromises, fsExtra.readFile(config.robots).then(buffer => saveFile(`robots.txt`, buffer)));
+            }
             // flatten the arrays of tweets into one big array
             tweets = [];
             (filtering || fallback)("Filtering and flattening tweets...");
@@ -637,7 +666,7 @@ function sortResults(criterion) {
 }
 
 function renderResults() {
-  const output = results.map(item => \`<p class="search_item"><div class="search_text">\${item.full_text}</div><div class="search_time">\${new Date(item.created_at).toLocaleString()} <div class="search_link"><a href="${accountInfo.userName}/status/\${item.id_str}">🔗</a></div></div><hr class="search_divider" /></p>\`.replace(/\\.\\.\\/\\.\\.\\/tweets_media\\//g,'${accountInfo.userName}/tweets_media/'));
+  const output = results.map(item => \`<p class="search_item"><div class="search_text">\${item.full_text}</div><div class="search_time">\${new Date(item.created_at).toLocaleString()} <div class="search_link"><a class="permalink" href="${accountInfo.userName}/status/\${item.id_str}">🔗</a></div></div><hr class="search_divider" /></p>\`.replace(/\\.\\.\\/\\.\\.\\/tweets_media\\//g,'${accountInfo.userName}/tweets_media/'));
   document.getElementById('output').innerHTML = output.join('');
   if (results.length > 0) {
     document.getElementById('output').innerHTML += '<a href="#tabs">top &uarr;</a>';
@@ -693,7 +722,7 @@ document.getElementById('page-num').max = pageMax;
 document.getElementById('page-num').min = 1;
 
 function renderBrowse() {
-  const output = browseDocuments.slice(browseIndex, browseIndex + pageSize).map(item => \`<p class="search_item"><!-- Avatar here --><div class="search_text">\${item.full_text}</div><div class="search_link"><div class="search_time">\${new Date(item.created_at).toLocaleString()}</div> <a href="${accountInfo.userName}/status/\${item.id_str}">🔗</a></div><hr class="search_divider" /></p>\`.replace(/\\.\\.\\/\\.\\.\\/tweets_media\\//g,'${accountInfo.userName}/tweets_media/'));
+  const output = browseDocuments.slice(browseIndex, browseIndex + pageSize).map(item => \`<p class="search_item"><!-- Avatar here --><div class="search_text">\${item.full_text}</div><div class="search_link"><div class="search_time">\${new Date(item.created_at).toLocaleString()} <a class="permalink" href="${accountInfo.userName}/status/\${item.id_str}">🔗</a></div></div><hr class="search_divider" /></p>\`.replace(/\\.\\.\\/\\.\\.\\/tweets_media\\//g,'${accountInfo.userName}/tweets_media/'));
   document.getElementById('browse-output').innerHTML = output.join('');
   document.getElementById('browse-output').innerHTML += '<a href="#tabs">top &uarr;</a>';
 }
@@ -703,6 +732,10 @@ renderBrowse();`;
 }
 
 function makeOutputIndexHtml(accountInfo) {
+  const generatedDate = new Date().toUTCString();
+  const title = accountInfo.title || `Welcome to the @${accountInfo.userName} Twitter archive`;
+  const oldestSnippetSearch = accountInfo.suppressOldest ? "" : `<button class="sort-button" onclick="sortResults('oldest-first')">oldest first</button> | `;
+  const oldestSnippetBrowse = accountInfo.suppressOldest ? "" : `<button class="sort-button-browse" onclick="sortResults('oldest-first-browse')">oldest first</button> | `;
   const outputIndexHtml = `
 <!DOCTYPE html>
 <html lang="en">
@@ -715,8 +748,12 @@ function makeOutputIndexHtml(accountInfo) {
 <body>
   <div class="wrapper">
     <div class="flex-wrap">
-      <h1>Welcome to the @${accountInfo.userName} Twitter archive</h1>
-      <p>This is a page where you can search many of my tweets, get a link to an archived version, and view all the content in nice, threaded form where applicable. This does not include replies to other people in this archive, so this is just "standalone" tweets and threads.</p>
+      <div class="flex-cols">
+        <img width="128" height="128" style="margin-right:2em" src="${accountInfo.avatarPath}" />
+        <h1>${title}</h1>
+      </div>
+      <p>${accountInfo.introduction}</p>
+      <!-- Generated ${generatedDate} -->
       <div class="tweet">
         <p id="tabs">
           <button class="tab active" id="search-tab" onclick="searchTab()">Search</button><button class="tab" id="browse-tab" onclick="browseTab()">Browse</button>
@@ -725,16 +762,16 @@ function makeOutputIndexHtml(accountInfo) {
         <p id="loading">Loading search...</p>
         <div id="search" hidden>
           <input id="search-input" type="search" />
-          <div id="sorting">Sort by: <button class="sort-button" onclick="sortResults('most-relevant')">most relevant</button> | <button class="sort-button" onclick="sortResults('oldest-first')">oldest first</button> | <button class="sort-button" onclick="sortResults('newest-first')">newest first</button> | <button class="sort-button" onclick="sortResults('most-popular')">most popular</button></div>
+          <div id="sorting">Sort by: <button class="sort-button" onclick="sortResults('most-relevant')">most relevant</button> | ${oldestSnippetSearch}<button class="sort-button" onclick="sortResults('newest-first')">newest first</button> | <button class="sort-button" onclick="sortResults('most-popular')">most popular</button></div>
           <div id="output"></div>
         </div>
         <div id="browse" hidden>
-          <div id="browse-sort">Sort by: <button class="sort-button-browse" onclick="sortResults('oldest-first-browse')">oldest first</button> | <button class="sort-button-browse" onclick="sortResults('newest-first-browse')">newest first</button> | <button class="sort-button" onclick="sortResults('most-popular-browse')">most popular</button></div>
+          <div id="browse-sort">Sort by: ${oldestSnippetBrowse}<button class="sort-button-browse" onclick="sortResults('newest-first-browse')">newest first</button> | <button class="sort-button" onclick="sortResults('most-popular-browse')">most popular</button></div>
           <p id="paging">Page <input id="page-num" type="number" /> of <span id="page-total">...</span> </p>
           <div id="browse-output"></div>
         </div>
       </div>
-      <p>This site was made with <a href="https://tinysubversions.com/twitter-archive/make-your-own/">this Twitter archiving tool</a>.</p>
+      <p>This site was made with <a href="https://tinysubversions.com/twitter-archive/make-your-own/">this Twitter archiving tool</a> (via <a href="https://github.com/mcclure/twitter-archiver/tree/cmdline-only">this</a> fork).${accountInfo.footer||""}</p>
     </div>
   </div>
 </body>

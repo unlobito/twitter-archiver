@@ -1,6 +1,8 @@
 The file sample/egg.jpg is included as a historical example of a Twitter avatar, in hopes that this inclusion is covered by fair use.
 
-Other than that file:
+The file sample/flexsearch.bundle.js is covered by the Apache License 2.0. See [github](https://github.com/nextapps-de/flexsearch).
+
+Other than those two files:
 
 Copyright (c) 2023 Andi McClure
 

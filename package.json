@@ -3,7 +3,7 @@
   "description": "Make your own simple, public, searchable Twitter archive",
   "version": "1.0.0",
   "scripts": {
-    "build": "tsc && copyfiles -f -E sample/sample.toml build && copyfiles -f -E sample/egg.jpg build",
+    "build": "tsc && copyfiles -f -E sample/sample.toml build && copyfiles -f -E sample/egg.jpg build && copyfiles -f -E sample/flexsearch.bundle.js build",
     "exec": "node build/exec.js"
   },
   "repository": {

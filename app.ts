@@ -215,6 +215,11 @@ body {
   width:64px;
   margin-right:1em;
 }
+.reply_badge {
+  display: inline;
+  margin-left: 6px;
+  font-size:0.6em;
+}
 .tweet {
     background-color: #e8e8e8;
     max-width: 600px;
@@ -276,7 +281,7 @@ a.permalink:hover { background-color:#666666 }
   font-size:0.75em;
 }
 .tweet .permalink {
-  margin-left: 16px;
+  margin-left: 6px; 
 }
 .child {
   margin-top: 16px;
@@ -375,7 +380,7 @@ a.permalink:hover { background-color:#666666 }
 }`;
 }
 
-export function parseZip(files:string[], {callback:{fallback, starting, filtering, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, directoriesDisabled:_directoriesDisabled, saveAs, saveAsDirectory}:{callback?:{fallback?:(string)=>void, starting?:(string)=>void, filtering?:(string)=>void, makingThreads?:(string)=>void, makingHtml?:(string)=>void, makingSearch?:(string)=>void, makingMedia?:(string)=>void, doneFailure?:(string)=>void, doneSuccess?:(string)=>void}, baseUrl?:string, directoriesDisabled?:boolean, saveAs?:string, saveAsDirectory?:boolean}, config:{dir?:string, avatar?:string, name?:string, title?:string, introduction?:string, footer?:string, robots?:string, suppress_oldest?:boolean}) {
+export function parseZip(files:string[], {callback:{fallback, starting, filtering, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, directoriesDisabled:_directoriesDisabled, saveAs, saveAsDirectory}:{callback?:{fallback?:(string)=>void, starting?:(string)=>void, filtering?:(string)=>void, makingThreads?:(string)=>void, makingHtml?:(string)=>void, makingSearch?:(string)=>void, makingMedia?:(string)=>void, doneFailure?:(string)=>void, doneSuccess?:(string)=>void}, baseUrl?:string, directoriesDisabled?:boolean, saveAs?:string, saveAsDirectory?:boolean}, config:{dir?:string, js_dir?:string, avatar?:string, name?:string, title?:string, introduction?:string, footer?:string, robots?:string, jsdelivr?:boolean, suppress_oldest?:boolean}) {
   assert(saveAs, "No save destination given");
   assert(config.dir != null, "Neither sample.toml nor a --config option file were found.")
   baseUrlOverride = baseUrl;
@@ -457,6 +462,9 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
             if (config.robots) {
               pushIf(sitePromises, fsExtra.readFile(config.robots).then(buffer => saveFile(`robots.txt`, buffer)));
             }
+            if (!config.jsdelivr) {
+              pushIf(sitePromises, fsExtra.readFile(pathJoin(config.js_dir, "flexsearch.bundle.js")).then(buffer => saveFile(`flexsearch.bundle.js`, buffer)));
+            }
             // flatten the arrays of tweets into one big array
             tweets = [];
             (filtering || fallback)("Filtering and flattening tweets...");
@@ -495,9 +503,10 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
                   pushIf(sitePromises, saveFile(`${userName}/status/${id}/index.html`, makePage(tweet, accountInfo)));
                 }
             }
-            (makingSearch || fallback)("Making all the HTML pages...");
+            (makingSearch || fallback)("Making the search/browse index...");
             const searchDocuments = tweets
               .filter(tweet => tweet.full_text.substr(0,4) !== 'RT @')
+              .filter(tweet => tweet.full_text.substr(0,1) !== '@')
               .map(tweet => {
                   return {
                     created_at: tweet.created_at,
@@ -505,11 +514,12 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
                     full_text: tweet.full_text,
                     favorite_count: tweet.favorite_count,
                     retweet_count: tweet.retweet_count,
+                    ...tweet.in_reply_to_user_id_str && {is_reply: true}
                   };
                 });
             pushIf(sitePromises, saveFile(`searchDocuments.js`, 'const searchDocuments = ' + JSON.stringify(searchDocuments)));
             pushIf(sitePromises, saveFile(`app.js`, makeOutputAppJs(accountInfo)));
-            pushIf(sitePromises, saveFile(`index.html`, makeOutputIndexHtml(accountInfo)));
+            pushIf(sitePromises, saveFile(`index.html`, makeOutputIndexHtml(accountInfo, config.jsdelivr)));
             (makingMedia || fallback)("Dropping in all your media files...");
             entryFilter(/^data\/tweets?_media\//).forEach((file, relativePath) => { // TODO test this
               // only include this in the archive if it's original material we posted (not RTs)
@@ -608,7 +618,8 @@ function processData(data) {
         created_at: doc.created_at,
         full_text: doc.full_text,
         favorite_count: doc.favorite_count,
-        retweet_count: doc.retweet_count
+        retweet_count: doc.retweet_count,
+        is_reply: doc.is_reply
     })
   };
   document.getElementById('loading').hidden = true;
@@ -666,7 +677,7 @@ function sortResults(criterion) {
 }
 
 function renderResults() {
-  const output = results.map(item => \`<p class="search_item"><div class="search_text">\${item.full_text}</div><div class="search_time">\${new Date(item.created_at).toLocaleString()} <div class="search_link"><a class="permalink" href="${accountInfo.userName}/status/\${item.id_str}">🔗</a></div></div><hr class="search_divider" /></p>\`.replace(/\\.\\.\\/\\.\\.\\/tweets_media\\//g,'${accountInfo.userName}/tweets_media/'));
+  const output = results.map(item => \`<p class="search_item"><div class="search_text">\${item.full_text}</div><div class="search_time">\${new Date(item.created_at).toLocaleString()} <div class="search_link"><a class="permalink" href="${accountInfo.userName}/status/\${item.id_str}">🔗</a>\${item.is_reply?'<div class="reply_badge">(reply)</div>':""}</div></div><hr class="search_divider" /></p>\`.replace(/\\.\\.\\/\\.\\.\\/tweets_media\\//g,'${accountInfo.userName}/tweets_media/'));
   document.getElementById('output').innerHTML = output.join('');
   if (results.length > 0) {
     document.getElementById('output').innerHTML += '<a href="#tabs">top &uarr;</a>';
@@ -722,7 +733,7 @@ document.getElementById('page-num').max = pageMax;
 document.getElementById('page-num').min = 1;
 
 function renderBrowse() {
-  const output = browseDocuments.slice(browseIndex, browseIndex + pageSize).map(item => \`<p class="search_item"><!-- Avatar here --><div class="search_text">\${item.full_text}</div><div class="search_link"><div class="search_time">\${new Date(item.created_at).toLocaleString()} <a class="permalink" href="${accountInfo.userName}/status/\${item.id_str}">🔗</a></div></div><hr class="search_divider" /></p>\`.replace(/\\.\\.\\/\\.\\.\\/tweets_media\\//g,'${accountInfo.userName}/tweets_media/'));
+  const output = browseDocuments.slice(browseIndex, browseIndex + pageSize).map(item => \`<p class="search_item"><!-- Avatar here --><div class="search_text">\${item.full_text}</div><div class="search_link"><div class="search_time">\${new Date(item.created_at).toLocaleString()} <a class="permalink" href="${accountInfo.userName}/status/\${item.id_str}">🔗</a>\${item.is_reply?'<div class="reply_badge">(reply)</div>':""}</div></div><hr class="search_divider" /></p>\`.replace(/\\.\\.\\/\\.\\.\\/tweets_media\\//g,'${accountInfo.userName}/tweets_media/'));
   document.getElementById('browse-output').innerHTML = output.join('');
   document.getElementById('browse-output').innerHTML += '<a href="#tabs">top &uarr;</a>';
 }
@@ -731,11 +742,12 @@ renderBrowse();`;
   return outputAppJs;
 }
 
-function makeOutputIndexHtml(accountInfo) {
+function makeOutputIndexHtml(accountInfo, jsdelivr) {
   const generatedDate = new Date().toUTCString();
   const title = accountInfo.title || `Welcome to the @${accountInfo.userName} Twitter archive`;
   const oldestSnippetSearch = accountInfo.suppressOldest ? "" : `<button class="sort-button" onclick="sortResults('oldest-first')">oldest first</button> | `;
   const oldestSnippetBrowse = accountInfo.suppressOldest ? "" : `<button class="sort-button-browse" onclick="sortResults('oldest-first-browse')">oldest first</button> | `;
+  const flexsearchPath = jsdelivr ? "https://cdn.jsdelivr.net/gh/nextapps-de/flexsearch@0.7.31/dist/flexsearch.bundle.js" : "flexsearch.bundle.js"
   const outputIndexHtml = `
 <!DOCTYPE html>
 <html lang="en">
@@ -776,7 +788,7 @@ function makeOutputIndexHtml(accountInfo) {
   </div>
 </body>
 <script src="searchDocuments.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/nextapps-de/flexsearch@0.7.31/dist/flexsearch.bundle.js"></script>
+<script src="${flexsearchPath}"></script>
 <script src="app.js"></script>
 </html>`;
   return outputIndexHtml;

@@ -14,6 +14,7 @@ program
   .option('-b, --base-url <char>')
   .option('-d, --disable-directories')
   .option('-c, --config <path>', 'toml file (see sample.toml for format)')
+  .option('--jsdelivr', 'source flexsearch from jsdelivr.net instead of locally')
   ;
 
 program.parse();
@@ -35,6 +36,7 @@ try { // Included sample.toml as base config
   const __dirname = urlFileURLToPath(new URL('.', import.meta.url)); // __dirname not provided by default in ESM Node
   config = toml.parse(fsReadFileSync(pathJoin(__dirname, "sample.toml"), 'utf-8')).config;
   config.dir = __dirname;
+  config.js_dir = __dirname;
   config.avatar = relativizePath(config.avatar, config.dir); // Postprocess
   config.robots = relativizePath(config.robots, config.dir); // NOOP
 } catch (e) {
@@ -47,6 +49,9 @@ if (configPath) { // User config overwrites only included files
   userConfig.avatar = relativizePath(userConfig.avatar, config.dir); // Postprocess
   userConfig.robots = relativizePath(userConfig.robots, config.dir); // Postprocess
   Object.assign(config, userConfig);
+}
+if (options.jsdelivr) {
+  config.jsdelivr = true;
 }
 
 async function run() { // Must function wrap so we can use async at toplevel

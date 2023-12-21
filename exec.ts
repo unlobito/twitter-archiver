@@ -62,6 +62,7 @@ async function run() { // Must function wrap so we can use async at toplevel
     callback:{fallback, doneFailure, doneSuccess},
     baseUrl:options.baseUrl || '',
     directoriesDisabled:options.disableDirectories,
+    inputDirectory:!input.endsWith(".zip"),
     saveAs:output,
     saveAsDirectory:!output.endsWith(".zip")
   }, config);

@@ -1,6 +1,7 @@
 import AdmZip from 'adm-zip';
 import {promisify} from 'node:util';
 import {basename as pathBasename, dirname as pathDirname, join as pathJoin} from 'node:path';
+import {readdirSync as fsReaddirSync} from 'node:fs'
 import fsExtra from 'fs-extra';
 import assert from 'node:assert';
 
@@ -380,7 +381,7 @@ a.permalink:hover { background-color:#666666 }
 }`;
 }
 
-export function parseZip(files:string[], {callback:{fallback, starting, filtering, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, directoriesDisabled:_directoriesDisabled, saveAs, saveAsDirectory}:{callback?:{fallback?:(string)=>void, starting?:(string)=>void, filtering?:(string)=>void, makingThreads?:(string)=>void, makingHtml?:(string)=>void, makingSearch?:(string)=>void, makingMedia?:(string)=>void, doneFailure?:(string)=>void, doneSuccess?:(string)=>void}, baseUrl?:string, directoriesDisabled?:boolean, saveAs?:string, saveAsDirectory?:boolean}, config:{dir?:string, js_dir?:string, avatar?:string, name?:string, title?:string, introduction?:string, footer?:string, robots?:string, jsdelivr?:boolean, suppress_oldest?:boolean}) {
+export function parseZip(files:string[], {callback:{fallback, starting, filtering, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, directoriesDisabled:_directoriesDisabled, inputDirectory, saveAs, saveAsDirectory}:{callback?:{fallback?:(string)=>void, starting?:(string)=>void, filtering?:(string)=>void, makingThreads?:(string)=>void, makingHtml?:(string)=>void, makingSearch?:(string)=>void, makingMedia?:(string)=>void, doneFailure?:(string)=>void, doneSuccess?:(string)=>void}, baseUrl?:string, directoriesDisabled?:boolean, inputDirectory?:boolean, saveAs?:string, saveAsDirectory?:boolean}, config:{dir?:string, js_dir?:string, avatar?:string, name?:string, title?:string, introduction?:string, footer?:string, robots?:string, jsdelivr?:boolean, suppress_oldest?:boolean}) {
   assert(saveAs, "No save destination given");
   assert(config.dir != null, "Neither sample.toml nor a --config option file were found.")
   baseUrlOverride = baseUrl;
@@ -390,30 +391,56 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
   (starting || fallback)("Starting...");
   const dateBefore = new Date();
   function handleFile(f) {
-    const zip = new AdmZip(f);
-    const entries = zip.getEntries();
-    const entryFilter = (prefix:RegExp) => {
-      let result = new Map<string, AdmZip.IZipEntry>();
-      for (const entry of entries) {
-        const path = entry.entryName;
-        if (!entry.isDirectory && path.match(prefix)) {
-          result.set(path.replace(prefix, ""), entry);
+    const zip = inputDirectory ? null : new AdmZip(f);
+    const entries = zip && zip.getEntries();
+    // We do not interact directly with zip, instead we use the entryFilter, readAsTextPromise, readPromise wrappers.
+    // This (1) works around weirdness in the adm-zip api and (2) allows us to swap out adm-zip for regular node fs. 
+    const entryFilter = zip ? // Notice some awkwardness with ambiguity of return types. Return maps (KEY) a tweet directory name to (VALUE) somewhere it can be looked up.
+      (prefix:RegExp) => {
+        let result = new Map<string, AdmZip.IZipEntry>();
+        for (const entry of entries) {
+          const path = entry.entryName;
+          if (!entry.isDirectory && path.match(prefix)) {
+            result.set(path.replace(prefix, ""), entry);
+          }
         }
-      }
-      return result;
-    }
+        return result;
+      } :
+      function entryFitlerImpl(prefix:RegExp, _matchPath?:string, _diskPath?:string, _result?:Map<string, string>) { // Recursively walk directory. (There is a "recursive" flag on readdirSync in node 20 or newer but this was written against 18)
+        const result = _result || new Map<string, string>();
+        const matchPath = _matchPath || ""; // Partial path for RegExp match
+        const diskPath = _diskPath || f; // Partial path for (VALUE)
+        const contents = fsReaddirSync(diskPath, {'withFileTypes':true}); // "withFileTypes", misleadingly, tells you if it's a file or directory
+        for (const dirent of contents) {
+          if (dirent.isDirectory()) {
+            const name = dirent.name;
+            const match = `${matchPath}/name`;
+            const path = pathJoin(diskPath, name);
+            if (match.match(prefix)) { // Directory is a match; don't look any deeper.
+              result.set(name, path);
+            } else {
+              entryFitlerImpl(prefix, match, path, result); // Recurse, keep searching
+            }
+          }
+        }
+        return result;
+      };
 
     try {
         const dateAfter = new Date();
         const admPromisify1 = (f) => promisify((a1,callback) => f(a1, (x,y) => callback(y,x))); // This is AWFUL: AdmZip does its callback args in opposite order from Node
-        const readAsTextPromise = admPromisify1((x,y) => zip.readAsTextAsync(x,y,"utf8"));
-        const readPromise = admPromisify1(zip.readFileAsync) as (arg1: string | AdmZip.IZipEntry) => Promise<Buffer>;
+        const readAsTextPromise = zip ?
+          admPromisify1((x:string,y) => zip.readAsTextAsync(zip.getEntry(x),y,"utf8")) :
+          (x:string) => fsExtra.readFile(pathJoin(f, x)).then((y:Buffer)=>y.toString());
+        const readPromise = zip ?
+          admPromisify1(zip.readFileAsync) as (arg1: string | AdmZip.IZipEntry) => Promise<Buffer> :
+          (x:string) => fsExtra.readFile(pathJoin(f, x));
         function pushIf<T>(ary:T[], value:T|null) {
           if (value != null) {
             ary.push(value);
           }
         }
-        readAsTextPromise(zip.getEntry('data/manifest.js')).then(function(content) {
+        readAsTextPromise('data/manifest.js').then(function(content) {
           if (typeof window == "undefined")
             globalThis.window = {YTD:{tweet:{}}};
           eval(content as string); // Oh no
@@ -433,7 +460,7 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
           let promises = [];
           for (const file of tweetFiles) {
             promises.push(new Promise((resolve, reject) => {
-              readAsTextPromise(zip.getEntry(file.fileName)).then(tweetContent => {
+              readAsTextPromise(file.fileName).then(tweetContent => {
                 eval(tweetContent as string); // Oh no no no
                 resolve(`done ${file.fileName}`);
               }).catch(reject);

@@ -11,7 +11,7 @@ program
   .description('Split a string into substrings and display as an array')
   .argument('<input>', 'zip file to read')
   .argument('<output>', 'directory to write (or zip file if ending in .zip)')
-  .option('-b, --base-url <char>')
+  .option('-b, --base-url <char>', 'intended url (no trailing slash)')
   .option('-d, --disable-directories')
   .option('-c, --config <path>', 'toml file (see sample.toml for format)')
   .option('--jsdelivr', 'source flexsearch from jsdelivr.net instead of locally')

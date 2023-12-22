@@ -15,6 +15,7 @@ program
   .option('-d, --disable-directories')
   .option('-c, --config <path>', 'toml file (see sample.toml for format)')
   .option('--jsdelivr', 'source flexsearch from jsdelivr.net instead of locally')
+  .option('--batch <limit>', 'do work in batches instead of all at once (recommend 100 for large archives)')
   ;
 
 program.parse();
@@ -64,7 +65,8 @@ async function run() { // Must function wrap so we can use async at toplevel
     directoriesDisabled:options.disableDirectories,
     inputDirectory:!input.endsWith(".zip"),
     saveAs:output,
-    saveAsDirectory:!output.endsWith(".zip")
+    saveAsDirectory:!output.endsWith(".zip"),
+    promisesMax:options.batch,
   }, config);
 }
 run();

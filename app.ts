@@ -381,7 +381,7 @@ a.permalink:hover { background-color:#666666 }
 }`;
 }
 
-export function parseZip(files:string[], {callback:{fallback, starting, filtering, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, directoriesDisabled:_directoriesDisabled, inputDirectory, saveAs, saveAsDirectory}:{callback?:{fallback?:(string)=>void, starting?:(string)=>void, filtering?:(string)=>void, makingThreads?:(string)=>void, makingHtml?:(string)=>void, makingSearch?:(string)=>void, makingMedia?:(string)=>void, doneFailure?:(string)=>void, doneSuccess?:(string)=>void}, baseUrl?:string, directoriesDisabled?:boolean, inputDirectory?:boolean, saveAs?:string, saveAsDirectory?:boolean}, config:{dir?:string, js_dir?:string, avatar?:string, name?:string, title?:string, introduction?:string, footer?:string, robots?:string, jsdelivr?:boolean, suppress_oldest?:boolean}) {
+export function parseZip(files:string[], {callback:{fallback, starting, filtering, filteringPost, makingThreads, makingHtml, makingSearch, makingMedia, doneFailure, doneSuccess}, baseUrl, directoriesDisabled:_directoriesDisabled, inputDirectory, saveAs, saveAsDirectory, promisesMax}:{callback?:{fallback?:(string)=>void, starting?:(string)=>void, filtering?:(string)=>void, filteringPost?:(string)=>void, makingThreads?:(string)=>void, makingHtml?:(string)=>void, makingSearch?:(string)=>void, makingMedia?:(string)=>void, doneFailure?:(string)=>void, doneSuccess?:(string)=>void}, baseUrl?:string, directoriesDisabled?:boolean, inputDirectory?:boolean, saveAs?:string, saveAsDirectory?:boolean, promisesMax?:number}, config:{dir?:string, js_dir?:string, avatar?:string, name?:string, title?:string, introduction?:string, footer?:string, robots?:string, jsdelivr?:boolean, suppress_oldest?:boolean}) {
   assert(saveAs, "No save destination given");
   assert(config.dir != null, "Neither sample.toml nor a --config option file were found.")
   baseUrlOverride = baseUrl;
@@ -467,9 +467,9 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
             }));
           }
           // grab all the tweet data
-          Promise.all(promises).then(values => {
+          Promise.all(promises).then(async (values) => {
             // when done...
-            const sitePromises = [];
+            let sitePromises = [];
             const siteZip = saveAsDirectory ? null : new AdmZip();
             function saveFile(path:string, content:Buffer|string) {
               if (saveAsDirectory) {
@@ -483,14 +483,28 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
                 return null
               }
             }
-						pushIf(sitePromises, saveFile(`styles.css`, makeStyles()));
+            // A note about async.
+            // This program was originally written directly using the Promise API.
+            // But then when it was ported to Node, it turned out queueing thousands of I/O ops leads to a "too many files open" error.
+            // To fix this, I switched to fs-extra, which fixed the problem for medium-size loads. But not large ones.
+            // So I introduced this function that doesn't allow more than 100 inflight promises at once and waits when that's exceeded.
+            // Now we're using async in one place. So it would make sense to convert everything *else* to use async as well. But this has not happened yet.
+            async function pushPromise(promise) {
+              if (promisesMax && sitePromises.length > promisesMax) {
+                const batchPromises = sitePromises;
+                sitePromises = [];
+                await Promise.all(batchPromises);
+              }
+              pushIf(sitePromises, promise);
+            }
+            await pushPromise(saveFile(`styles.css`, makeStyles()));
             // Copy user-specified avatar file (from real hard drive)
-            pushIf(sitePromises, fsExtra.readFile(config.avatar).then(buffer => saveFile(siteAvatarPath, buffer)));
+            await pushPromise(fsExtra.readFile(config.avatar).then(buffer => saveFile(siteAvatarPath, buffer)));
             if (config.robots) {
-              pushIf(sitePromises, fsExtra.readFile(config.robots).then(buffer => saveFile(`robots.txt`, buffer)));
+              await pushPromise(fsExtra.readFile(config.robots).then(buffer => saveFile(`robots.txt`, buffer)));
             }
             if (!config.jsdelivr) {
-              pushIf(sitePromises, fsExtra.readFile(pathJoin(config.js_dir, "flexsearch.bundle.js")).then(buffer => saveFile(`flexsearch.bundle.js`, buffer)));
+              await pushPromise(fsExtra.readFile(pathJoin(config.js_dir, "flexsearch.bundle.js")).then(buffer => saveFile(`flexsearch.bundle.js`, buffer)));
             }
             // flatten the arrays of tweets into one big array
             tweets = [];
@@ -505,6 +519,7 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
                 }
               }
             }
+            (filteringPost || fallback)(`${tweets.length} tweets.`);
             (makingThreads || fallback)("Setting up threading metadata...");
             // iterate once through every tweet to set up the children array
             // so if something I wrote has two direct replies that I wrote, it will have an array size 2 with each ID of the two child replies
@@ -525,9 +540,9 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
             for (const tweet of tweets) {
                 let id = tweet.id_str || tweet.id;
                 if (directoriesDisabled) {
-                  pushIf(sitePromises, saveFile(`${userName}/status/${id}.html`, makePage(tweet, accountInfo)));
+                  await pushPromise(saveFile(`${userName}/status/${id}.html`, makePage(tweet, accountInfo)));
                 } else {
-                  pushIf(sitePromises, saveFile(`${userName}/status/${id}/index.html`, makePage(tweet, accountInfo)));
+                  await pushPromise(saveFile(`${userName}/status/${id}/index.html`, makePage(tweet, accountInfo)));
                 }
             }
             (makingSearch || fallback)("Making the search/browse index...");
@@ -544,9 +559,9 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
                     ...tweet.in_reply_to_user_id_str && {is_reply: true}
                   };
                 });
-            pushIf(sitePromises, saveFile(`searchDocuments.js`, 'const searchDocuments = ' + JSON.stringify(searchDocuments)));
-            pushIf(sitePromises, saveFile(`app.js`, makeOutputAppJs(accountInfo)));
-            pushIf(sitePromises, saveFile(`index.html`, makeOutputIndexHtml(accountInfo, config.jsdelivr)));
+            await pushPromise(saveFile(`searchDocuments.js`, 'const searchDocuments = ' + JSON.stringify(searchDocuments)));
+            await pushPromise(saveFile(`app.js`, makeOutputAppJs(accountInfo)));
+            await pushPromise(saveFile(`index.html`, makeOutputIndexHtml(accountInfo, config.jsdelivr)));
             (makingMedia || fallback)("Dropping in all your media files...");
             entryFilter(/^data\/tweets?_media\//).forEach((file, relativePath) => { // TODO test this
               // only include this in the archive if it's original material we posted (not RTs)
@@ -571,12 +586,12 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
               console.log('DONE');
               (doneSuccess || fallback)(`<strong>DONE!!!</strong> Check your browser downloads for "archive.zip", and then unzip it on a web server somewhere. <em>It is likely to be much smaller than your original zip because it won't have media for stuff you retweeted.</em> I highly recommend that you upload the zip file itself to the server and unzip it once it's there. That way your file transfer will go much faster than if you try to unzip it localy and then upload 100k files. If you are using something like cPanel on your host, I believe most versions of that let you unzip a file you've uploaded somewhere in the user interface.`);
             }
-            Promise.all(sitePromises).then(() => {
+            console.log("Awaiting promises");
+            await Promise.all(sitePromises).then(() => {
               if (!saveAsDirectory) {
                 siteZip.writeZip(saveAs);
               }
             }).then(okayDone).catch(standardError(1));
-            console.log("Awaiting promises");
           }).catch(standardError(2));
         }).catch(standardError(3));
       } catch(error) {

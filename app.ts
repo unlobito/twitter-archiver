@@ -1,6 +1,6 @@
 import AdmZip from 'adm-zip';
 import {promisify} from 'node:util';
-import {basename as pathBasename, dirname as pathDirname, join as pathJoin} from 'node:path';
+import {basename as pathBasename, dirname as pathDirname, isAbsolute as pathIsAbsolute, join as pathJoin} from 'node:path';
 import {readdirSync as fsReaddirSync} from 'node:fs'
 import fsExtra from 'fs-extra';
 import assert from 'node:assert';
@@ -408,33 +408,38 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
       } :
       function entryFitlerImpl(prefix:RegExp, _matchPath?:string, _diskPath?:string, _result?:Map<string, string>) { // Recursively walk directory. (There is a "recursive" flag on readdirSync in node 20 or newer but this was written against 18)
         const result = _result || new Map<string, string>();
-        const matchPath = _matchPath || ""; // Partial path for RegExp match
+        const matchPath = _matchPath; // Partial path for RegExp match
         const diskPath = _diskPath || f; // Partial path for (VALUE)
         const contents = fsReaddirSync(diskPath, {'withFileTypes':true}); // "withFileTypes", misleadingly, tells you if it's a file or directory
         for (const dirent of contents) {
+          const name = dirent.name;
+          const match = matchPath ? `${matchPath}/${name}` : name;
+          const path = pathJoin(diskPath, name);
           if (dirent.isDirectory()) {
-            const name = dirent.name;
-            const match = `${matchPath}/name`;
-            const path = pathJoin(diskPath, name);
-            if (match.match(prefix)) { // Directory is a match; don't look any deeper.
-              result.set(name, path);
-            } else {
-              entryFitlerImpl(prefix, match, path, result); // Recurse, keep searching
-            }
+            entryFitlerImpl(prefix, match, path, result); // Recurse, keep searching
+          } else if (match.match(prefix)) { // Directory is a match; don't look any deeper.
+            result.set(name, path);
           }
         }
         return result;
       };
+      function safePathJoin(a,b) { // Cannot believe Node doesn't do this automatically
+        if (pathIsAbsolute(b)) {
+          return b;
+        } else {
+          return pathJoin(a,b);
+        }
+      }
 
     try {
         const dateAfter = new Date();
         const admPromisify1 = (f) => promisify((a1,callback) => f(a1, (x,y) => callback(y,x))); // This is AWFUL: AdmZip does its callback args in opposite order from Node
         const readAsTextPromise = zip ?
           admPromisify1((x:string,y) => zip.readAsTextAsync(zip.getEntry(x),y,"utf8")) :
-          (x:string) => fsExtra.readFile(pathJoin(f, x)).then((y:Buffer)=>y.toString());
+          (x:string) => fsExtra.readFile(safePathJoin(f, x)).then((y:Buffer)=>y.toString());
         const readPromise = zip ?
           admPromisify1(zip.readFileAsync) as (arg1: string | AdmZip.IZipEntry) => Promise<Buffer> :
-          (x:string) => fsExtra.readFile(pathJoin(f, x));
+          (x:string) => fsExtra.readFile(safePathJoin(f, x));
         function pushIf<T>(ary:T[], value:T|null) {
           if (value != null) {
             ary.push(value);
@@ -563,7 +568,7 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
             await pushPromise(saveFile(`app.js`, makeOutputAppJs(accountInfo)));
             await pushPromise(saveFile(`index.html`, makeOutputIndexHtml(accountInfo, config.jsdelivr)));
             (makingMedia || fallback)("Dropping in all your media files...");
-            entryFilter(/^data\/tweets?_media\//).forEach((file, relativePath) => { // TODO test this
+            for (const [relativePath, file] of entryFilter(/^data\/tweets?_media\//).entries()) { // TODO test this
               // only include this in the archive if it's original material we posted (not RTs)
               // grab the tweet id from the filename
               const matchId = relativePath.match(/^(.+?)-/);
@@ -577,11 +582,11 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
                   // if this tweet has media and it's original material (not from a retweet), add it to the zip
                   if (!tweet.extended_entities.media[0].source_user_id_str || tweet.extended_entities.media[0].source_user_id_str === accountInfo.accountId.toString()) {
                     const nextPromise = readPromise(file).then(buffer => saveFile(`${userName}/tweets_media/${relativePath}`, buffer));
-                    sitePromises.push(nextPromise);
+                    await pushPromise(nextPromise);
                   }
                 }
               }
-            });
+            };
             let okayDone = () => { // FIXME: Would be nice to wait on some of the promises above.
               console.log('DONE');
               (doneSuccess || fallback)(`<strong>DONE!!!</strong> Check your browser downloads for "archive.zip", and then unzip it on a web server somewhere. <em>It is likely to be much smaller than your original zip because it won't have media for stuff you retweeted.</em> I highly recommend that you upload the zip file itself to the server and unzip it once it's there. That way your file transfer will go much faster than if you try to unzip it localy and then upload 100k files. If you are using something like cPanel on your host, I believe most versions of that let you unzip a file you've uploaded somewhere in the user interface.`);

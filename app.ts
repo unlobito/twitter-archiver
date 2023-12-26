@@ -24,6 +24,7 @@ declare var window: any;
 
 let baseUrlOverride:string|null = null;
 let tweets:any[]|null = null;
+let circleTweets:any[]|null = null;
 
 function makeOpenGraph(tweet, accountInfo) {
   // trim trailing slash if included by user
@@ -447,11 +448,14 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
         }
         readAsTextPromise('data/manifest.js').then(function(content) {
           if (typeof window == "undefined")
-            globalThis.window = {YTD:{tweet:{}, tweets:{}}};
+            globalThis.window = {YTD:{tweet:{}, tweets:{}, twitter_circle_tweet:{}, twitter_circle_tweets:{}}};
           eval(content as string); // Oh no
           const tweetFiles = typeof window.__THAR_CONFIG.dataTypes.tweets == "undefined" ?
             window.__THAR_CONFIG.dataTypes.tweet.files :
             window.__THAR_CONFIG.dataTypes.tweets.files;
+          const circleTweetFiles = typeof window.__THAR_CONFIG.dataTypes.twitterCircleTweet == "undefined" ?
+            window.__THAR_CONFIG.dataTypes.twitterCircleTweets.files :
+            window.__THAR_CONFIG.dataTypes.twitterCircleTweet.files;
           const userName = window.__THAR_CONFIG.userInfo.userName;
           const displayName = config.name || window.__THAR_CONFIG.userInfo.displayName;
           const accountId = window.__THAR_CONFIG.userInfo.accountId;
@@ -461,8 +465,29 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
             avatarPath:siteAvatarPath, introduction:config.introduction, title:config.title, footer:config.footer,
             suppressOldest: config.suppress_oldest,
           };
-          // set up for grabbing all the tweet data
+          // set up for grabbing circle tweet IDs
           let promises = [];
+          for (const file of circleTweetFiles) {
+            promises.push(new Promise((resolve, reject) => {
+              readAsTextPromise(file.fileName).then(tweetContent => {
+                eval(tweetContent as string); // Oh no no no
+                resolve(`done ${file.fileName}`);
+
+                if (circleTweets == null) {
+                  circleTweets = [];
+                }
+                (filtering || fallback)("Filtering and flattening circle tweets...");
+                const windowTweets = typeof window.YTD.twitter_circle_tweet == "undefined" ? window.YTD.twitter_circle_tweets : window.YTD.twitter_circle_tweet;
+                for (const wrapper of Object.keys(windowTweets)) {
+                  for (const data of windowTweets[wrapper]) {
+                    const tweet = data.tweet;
+                    circleTweets.push(tweet.id_str);
+                  }
+                }
+              }).catch(reject);
+            }));
+          }
+          // set up for grabbing all the tweet data
           for (const file of tweetFiles) {
             promises.push(new Promise((resolve, reject) => {
               readAsTextPromise(file.fileName).then(tweetContent => {
@@ -518,8 +543,8 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
             for (const wrapper of Object.keys(windowTweets)) {
               for (const data of windowTweets[wrapper]) {
                 const tweet = data.tweet;
-                // only save tweets that are original tweets or replies to myself
-                if (!tweet.in_reply_to_user_id_str || tweet.in_reply_to_user_id_str === accountId.toString()) {
+                // only save tweets that are original tweets or replies to myself and aren't circle tweets
+                if ((!tweet.in_reply_to_user_id_str || tweet.in_reply_to_user_id_str === accountId.toString()) && !circleTweets.includes(tweet.id_str)) {
                   tweets.push(tweet);
                 }
               }

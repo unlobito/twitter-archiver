@@ -447,7 +447,7 @@ export function parseZip(files:string[], {callback:{fallback, starting, filterin
         }
         readAsTextPromise('data/manifest.js').then(function(content) {
           if (typeof window == "undefined")
-            globalThis.window = {YTD:{tweet:{}}};
+            globalThis.window = {YTD:{tweet:{}, tweets:{}}};
           eval(content as string); // Oh no
           const tweetFiles = typeof window.__THAR_CONFIG.dataTypes.tweets == "undefined" ?
             window.__THAR_CONFIG.dataTypes.tweet.files :
